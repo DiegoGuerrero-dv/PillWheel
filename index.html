@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Pastillero · Panel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ================= LOGIN VIEW ================= -->
+<div id="view-login" class="login-wrap">
+  <div class="login-card">
+    <div class="login-mark">💊</div>
+    <h1>Pastillero</h1>
+    <p>Inicia sesión para ver tu horario</p>
+    <div class="field">
+      <label for="loginPass">Contraseña</label>
+      <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="handleLogin()">Entrar</button>
+    <div class="error-msg" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div id="view-app" class="app hidden">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">💊</div>
+      <div class="name">Pastillero<small>Panel de administración</small></div>
+    </div>
+    <button class="icon-btn" onclick="handleLogout()" title="Cerrar sesión">⏻</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="tabDash" onclick="switchTab('dashboard')">Hoy</button>
+    <button class="tab" id="tabManage" onclick="switchTab('manage')">Casillas</button>
+  </div>
+
+  <!-- ---- DASHBOARD ---- -->
+  <div id="view-dashboard">
+    <div class="date-line">
+      <div class="day" id="todayDayName">-</div>
+      <div class="date" id="todayDate">-</div>
+    </div>
+
+    <div class="hero" id="heroBox"></div>
+
+    <div class="section-label">Dosis de hoy</div>
+    <div class="dose-list" id="doseList"></div>
+  </div>
+
+  <!-- ---- MANAGE ---- -->
+  <div id="view-manage" class="hidden">
+    <div class="section-label">Toca una casilla para editarla</div>
+    <div class="blister" id="blisterGrid"></div>
+  </div>
+</div>
+
+<!-- ================= EDIT SHEET ================= -->
+<div id="editOverlay" class="overlay hidden" onclick="if(event.target===this) closeEditor()">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <h2 id="editTitle">Casilla 1</h2>
+      <button class="icon-btn" onclick="closeEditor()">✕</button>
+    </div>
+
+    <div class="name-row">
+      <input id="editName" type="text" placeholder="Nombre del medicamento">
+      <button class="color-swatch" style="background:var(--surface)">
+        <input id="editColor" type="color" value="#4fd1ae" onchange="onColorChange()">
+      </button>
+    </div>
+
+    <div class="day-strip" id="dayStrip"></div>
+
+    <div class="times-panel">
+      <div class="label" id="timesLabel">Horarios · Lunes</div>
+      <div id="timesList"></div>
+      <button class="add-time" onclick="addTimeToDay()">+ Agregar hora</button>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" onclick="clearSlot()">Vaciar casilla</button>
+      <button class="btn btn-primary" onclick="saveSlot()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>

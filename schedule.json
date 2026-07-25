@@ -1,0 +1,134 @@
+[
+  {
+    "id": 1,
+    "name": "Pastilla Sida",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [
+        "13:00"
+      ],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": [
+        ""
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "name": "Test",
+    "color": "#e8b64f",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": [
+        "17:00"
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "name": "",
+    "color": "#8ab6ff",
+    "schedule": {
+      "Dom": [
+        "07:30"
+      ],
+      "Lun": [
+        "07:30"
+      ],
+      "Mar": [
+        "07:30"
+      ],
+      "Mie": [
+        "07:30"
+      ],
+      "Jue": [
+        "07:30"
+      ],
+      "Vie": [
+        "07:30"
+      ],
+      "Sab": [
+        "07:30"
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "name": "",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": []
+    }
+  },
+  {
+    "id": 5,
+    "name": "",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": []
+    }
+  },
+  {
+    "id": 6,
+    "name": "",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": []
+    }
+  },
+  {
+    "id": 7,
+    "name": "",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": []
+    }
+  },
+  {
+    "id": 8,
+    "name": "",
+    "color": "#4fd1ae",
+    "schedule": {
+      "Dom": [],
+      "Lun": [],
+      "Mar": [],
+      "Mie": [],
+      "Jue": [],
+      "Vie": [],
+      "Sab": []
+    }
+  }
+]
