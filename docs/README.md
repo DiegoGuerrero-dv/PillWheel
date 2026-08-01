@@ -7,6 +7,7 @@ Sede de la documentación del proyecto. Aquí viven la arquitectura, las guías 
 | Archivo | Contenido |
 | --- | --- |
 | [architecture.md](architecture.md) | Arquitectura actual: stack, contrato de API, modelo de datos, decisiones de diseño y problemas conocidos. |
+| [action-plan.md](action-plan.md) | Plan de acción: cierre de vulnerabilidades (V1–V10) y implementación del HAL hexagonal (H1–H6). |
 | [run-and-test.md](run-and-test.md) | Cómo correr el proyecto y cómo probarlo (manual y por API). |
 | `sdd/` (futuro) | Artefactos SDD por cambio: exploración, propuesta, spec, diseño y tareas. |
 

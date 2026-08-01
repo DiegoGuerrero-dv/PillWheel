@@ -23,9 +23,36 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 SCHEDULE_PATH = os.path.join(DIR, 'schedule.json')
 LOG_PATH = os.path.join(DIR, 'taken_log.json')
 
-ADMIN_PASSWORD = 'admin1234'   # debe coincidir con ADMIN_PASSWORD en el .ino
-DEV_TOKEN = 'dev-local-token'
-PORT = 8000
+ENV_PATH = os.path.join(DIR, '.env')
+
+
+def load_env_file(path=ENV_PATH):
+    """Carga KEY=VALUE del archivo .env si existe. Solo stdlib.
+
+    No pisa variables ya definidas en el entorno del proceso:
+    prioridad = entorno del proceso > .env > defaults de desarrollo.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, 'r', encoding='utf-8') as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, value = line.partition('=')
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                os.environ.setdefault(key, value)
+
+
+load_env_file()
+
+# Credenciales por configuración, no hardcodeadas en el fuente.
+# Creá un .env a partir de .env.example para poner las tuyas.
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')  # debe coincidir con ADMIN_PASSWORD en el .ino
+DEV_TOKEN = os.environ.get('DEV_TOKEN', 'dev-local-token')
+PORT = int(os.environ.get('PORT', '8000'))
 
 
 def read_json(path, default):
@@ -130,6 +157,10 @@ if __name__ == '__main__':
         write_json(SCHEDULE_PATH, [])
     if not os.path.exists(LOG_PATH):
         write_json(LOG_PATH, {})
+
+    if ADMIN_PASSWORD == 'admin1234' and DEV_TOKEN == 'dev-local-token':
+        print('[dev_server] AVISO: credenciales activas = defaults de desarrollo (admin1234 / dev-local-token).')
+        print('[dev_server] Para credenciales propias, creá un .env a partir de .env.example.')
 
     print(f'Pastillero (modo desarrollo) -> http://localhost:{PORT}')
     HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()

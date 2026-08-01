@@ -1,0 +1,49 @@
+# openspec/config.yaml — Configuración SDD del proyecto
+schema: spec-driven
+
+context: |
+  Proyecto: PillWheel — pastillero inteligente con panel web de administración.
+  Stack: HTML/CSS/JS vanilla (frontend) + Python 3 stdlib (backend http.server).
+  Persistencia: JSON en disco (schedule.json, taken_log.json).
+  Objetivo: backend hexagonal (Ports & Adapters / HAL) con adaptador ESP32.
+  Testing: sin runner — strict_tdd deshabilitado.
+  Idioma de artefactos: español neutro (convención del proyecto y de docs/).
+
+rules:
+  proposal:
+    - Respetar el alcance fijado: flujo de datos, backend y vulnerabilidades
+    - Incluir plan de rollback para cambios riesgosos
+  specs:
+    - Usar Given/When/Then en los escenarios
+    - Usar palabras clave RFC 2119 (MUST, SHALL, SHOULD, MAY)
+    - Referenciar docs/architecture.md y docs/action-plan.md como línea base
+  design:
+    - Incluir diagramas de secuencia para flujos complejos
+    - Documentar decisiones de arquitectura con justificación
+  tasks:
+    - Agrupar por fase, usar numeración jerárquica
+    - Mantener tareas completables en una sesión
+  apply:
+    - Seguir los patrones de código existentes (sin dependencias nuevas)
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Avisar antes de fusionar deltas destructivos
+
+testing:
+  strict_tdd: false
+  detected: 2026-08-01
+  runner: none
+  layers:
+    unit: false
+    integration: false
+    e2e: false
+  coverage: false
+  quality:
+    linter: false
+    type_checker: false
+    formatter: false

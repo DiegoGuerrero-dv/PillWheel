@@ -1,0 +1,9 @@
+# Credenciales y config local — cada persona pone las suyas
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Registro de skills local (índice generado)
+.atl/

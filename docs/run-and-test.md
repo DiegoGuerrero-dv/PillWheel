@@ -14,10 +14,12 @@ python dev_server.py
 
 Luego abrir **http://localhost:8000** en el navegador.
 
-Credenciales de acceso (hardcodeadas en `Dev_server.py`):
+Credenciales de acceso (desde tu `.env`, ver `.env.example`):
 
-- Password: `admin1234`
-- Token (para llamadas por API): `dev-local-token`
+- Password: el valor de `ADMIN_PASSWORD` (default dev: `admin1234`)
+- Token (para llamadas por API): el valor de `DEV_TOKEN` (default dev: `dev-local-token`)
+
+Si no existe `.env`, se usan los defaults de desarrollo con un aviso en consola. Cada persona del repo puede poner sus propias credenciales en su `.env` (no se commitea).
 
 ## Probar manualmente (UI)
 
