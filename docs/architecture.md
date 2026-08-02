@@ -117,6 +117,9 @@ Lista de records:
 - **index.html** — tres vistas: login (`#view-login`), panel (`#view-app` con pestañas `Hoy` y `Casillas`) y editor tipo bottom-sheet (`#editOverlay`).
 - **script.js** — capa de datos (`api` con fetch + token), autenticación/navegación, render del dashboard (próxima dosis, lista chequeable), grid del blister, editor (tira de días, lista de horarios, color) y utilidades (`escapeHtml`, toast).
 - **style.css** — tema oscuro con variables CSS (`:root`), móvil-first (máx. 640 px), sin framework.
+  - **Regla de iconos:** todos los iconos de la UI (`icon-btn`, `dose-check`, `time-chip .rm`) usan `color: #fff` (blanco). El `✕` de quitar hora es blanco (antes `--warn` rojo) por consistencia de la regla. `:root` declara `color-scheme: dark` para que los controles nativos del navegador (relojito del selector de hora, swatch de color, scrollbars) se rendericen claros.
+  - **Regla de casillas:** el nombre de la pastilla dentro de cada casilla del blister usa blanco. Se fija `color: var(--text)` en `.cell` porque es un `<button>` y sin `color` explícito el navegador usa `ButtonText` (negro en tema claro del sistema). El estado vacío (`.cell.empty .cname`) mantiene `--text-muted`.
+  - **Regla de formularios:** los inputs del editor (`.name-row input`, nombre de la pastilla) usan `color: var(--text)`; sin `color` explícito el navegador usa negro. Tienen el mismo aspecto que `.field input` (login). Los placeholders (`input::placeholder`) usan `--text-muted` con `opacity: 1` porque el color por defecto del navegador se ve oscuro sobre el tema. Los labels de sección (`.section-label`, incluido "Toca una casilla para editarla") usan `var(--text)`.
 
 ## Decisiones de diseño
 
