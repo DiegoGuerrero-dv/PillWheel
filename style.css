@@ -195,6 +195,8 @@ input::placeholder{color:var(--text-muted);opacity:1;}
 .day-chip .dot{width:4px;height:4px;border-radius:50%;background:var(--accent);position:absolute;bottom:5px;left:50%;transform:translateX(-50%);opacity:0;}
 .day-chip.has-times .dot{opacity:1;}
 .day-chip.active{background:var(--surface-2);color:var(--text);border-color:var(--accent-dim);}
+.day-chip.off{opacity:.4;}
+.day-chip.off .dot{background:var(--text-muted);}
 
 .times-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;}
 .times-panel .label{font-size:12px;color:var(--text-muted);margin-bottom:10px;}
@@ -202,8 +204,8 @@ input::placeholder{color:var(--text-muted);opacity:1;}
   display:flex;align-items:center;gap:8px;background:var(--bg-elevated);
   border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:8px;
 }
-.time-chip input[type=time]{background:transparent;border:none;color:var(--text);font-family:var(--mono);font-size:14px;flex:1;outline:none;}
-.time-chip .rm{background:none;border:none;color:#fff;font-size:15px;padding:0 4px;}
+.time-chip input[type=time]{background:transparent;border:none;color:var(--text);color-scheme:dark;font-family:var(--mono);font-size:14px;flex:1;outline:none;}
+.time-chip .rm{background:none;border:none;color:var(--warn);font-size:15px;padding:0 4px;}
 .add-time{
   width:100%;background:transparent;border:1px dashed var(--border);color:var(--accent);
   border-radius:9px;padding:9px 0;font-size:13px;font-weight:600;

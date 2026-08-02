@@ -85,6 +85,15 @@ Array de 8 slots con id fijo 1–8:
       "Jue": [],
       "Vie": [],
       "Sab": []
+    },
+    "enabled": {
+      "Dom": true,
+      "Lun": true,
+      "Mar": true,
+      "Mie": true,
+      "Jue": true,
+      "Vie": true,
+      "Sab": true
     }
   }
 ]
@@ -93,6 +102,7 @@ Array de 8 slots con id fijo 1–8:
 - `schedule` usa las claves `Dom, Lun, Mar, Mie, Jue, Vie, Sab`, alineadas índice a índice con `Date.getDay()` de JS (0 = Domingo) y con `tm_wday` de C.
 - Los horarios son strings `"HH:MM"` de 24 h.
 - `name` vacío = casilla sin medicamento (se ignora en el dashboard de hoy).
+- `enabled` (opcional, day-toggle): mapa `{Dom..Sab: bool}`. Un día con `false` **conserva sus horas** pero el scheduler no dispensa en él. Campo ausente o clave ausente = día activo (compatibilidad total con datos previos). El editor deselecciona/reactiva días con un click; "Vaciar casilla" resetea el campo a todos activos.
 
 ### taken_log.json
 
@@ -117,9 +127,10 @@ Lista de records:
 - **index.html** — tres vistas: login (`#view-login`), panel (`#view-app` con pestañas `Hoy` y `Casillas`) y editor tipo bottom-sheet (`#editOverlay`).
 - **script.js** — capa de datos (`api` con fetch + token), autenticación/navegación, render del dashboard (próxima dosis, lista chequeable), grid del blister, editor (tira de días, lista de horarios, color) y utilidades (`escapeHtml`, toast).
 - **style.css** — tema oscuro con variables CSS (`:root`), móvil-first (máx. 640 px), sin framework.
-  - **Regla de iconos:** todos los iconos de la UI (`icon-btn`, `dose-check`, `time-chip .rm`) usan `color: #fff` (blanco). El `✕` de quitar hora es blanco (antes `--warn` rojo) por consistencia de la regla. `:root` declara `color-scheme: dark` para que los controles nativos del navegador (relojito del selector de hora, swatch de color, scrollbars) se rendericen claros.
+  - **Regla de iconos:** todos los iconos de la UI (`icon-btn`, `dose-check`) usan `color: #fff` (blanco). Excepción: el `✕` de quitar hora (`.time-chip .rm`) es rojo (`--warn`) porque es una acción destructiva y debe diferenciarse. `:root` declara `color-scheme: dark` para que los controles nativos del navegador (relojito del selector de hora, swatch de color, scrollbars) se rendericen claros.
   - **Regla de casillas:** el nombre de la pastilla dentro de cada casilla del blister usa blanco. Se fija `color: var(--text)` en `.cell` porque es un `<button>` y sin `color` explícito el navegador usa `ButtonText` (negro en tema claro del sistema). El estado vacío (`.cell.empty .cname`) mantiene `--text-muted`.
   - **Regla de formularios:** los inputs del editor (`.name-row input`, nombre de la pastilla) usan `color: var(--text)`; sin `color` explícito el navegador usa negro. Tienen el mismo aspecto que `.field input` (login). Los placeholders (`input::placeholder`) usan `--text-muted` con `opacity: 1` porque el color por defecto del navegador se ve oscuro sobre el tema. Los labels de sección (`.section-label`, incluido "Toca una casilla para editarla") usan `var(--text)`.
+  - **Editor (UX):** al tocar un día sin horario (`selectDay`), se copian las horas del día visible (o del último con horas) para no configurarlas una por una. Los días que ya tienen horas no se sobrescriben; cada día sigue siendo editable (quitar/agregar/editar horas).
 
 ## Decisiones de diseño
 

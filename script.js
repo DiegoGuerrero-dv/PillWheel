@@ -165,6 +165,7 @@ function getTodayDoses(){
   let doses = [];
   state.slots.forEach(slot=>{
     if(!slot.name) return;
+    if(slot.enabled && slot.enabled[todayKey] === false) return;
     (slot.schedule[todayKey] || []).forEach(time=>{
       doses.push({slotId:slot.id, name:slot.name, color:slot.color, time});
     });
@@ -248,6 +249,10 @@ let editingDay = 'Dom';
 
 function openEditor(slotId){
   editingSlot = JSON.parse(JSON.stringify(state.slots.find(s=>s.id===slotId))); // clone
+  if(!editingSlot.enabled){
+    editingSlot.enabled = {};
+    DAY_KEYS.forEach(d => editingSlot.enabled[d] = true);
+  }
   editingDay = 'Dom';
   document.getElementById('editTitle').textContent = `Casilla ${slotId}`;
   document.getElementById('editName').value = editingSlot.name;
@@ -270,18 +275,47 @@ function renderDayStrip(){
   const strip = document.getElementById('dayStrip');
   strip.innerHTML = DAY_KEYS.map(d=>{
     const hasTimes = editingSlot.schedule[d].length > 0;
-    return `<button class="day-chip ${d===editingDay?'active':''} ${hasTimes?'has-times':''}"
+    const off = editingSlot.enabled[d] === false;
+    return `<button class="day-chip ${d===editingDay?'active':''} ${hasTimes?'has-times':''} ${off?'off':''}"
               onclick="selectDay('${d}')">${d}<span class="dot"></span></button>`;
   }).join('');
 }
 
 function selectDay(d){
+  if(d === editingDay){
+    // Deseleccionar: apaga el día conservando sus horas (no se ejecutan).
+    editingSlot.enabled[d] = false;
+    editingDay = null;
+    renderDayStrip();
+    renderTimesPanel();
+    return;
+  }
+  if(editingSlot.schedule[d].length === 0){
+    // UX: al elegir un día sin horario, se copian las horas del día visible
+    // (o del último día que tenga horas) para no configurarlas una por una.
+    const source = editingDay && editingSlot.schedule[editingDay].length > 0
+      ? editingDay
+      : DAY_KEYS.find(k => editingSlot.schedule[k].length > 0);
+    if(source){
+      editingSlot.schedule[d] = [...editingSlot.schedule[source]];
+    }
+  }
+  // Reactivar si estaba desactivado.
+  if(editingSlot.enabled[d] === false){
+    editingSlot.enabled[d] = true;
+  }
   editingDay = d;
   renderDayStrip();
   renderTimesPanel();
 }
 
 function renderTimesPanel(){
+  if(!editingDay){
+    document.getElementById('timesLabel').textContent = 'Horarios';
+    document.getElementById('timesList').innerHTML =
+      `<div style="color:var(--text-muted);font-size:12.5px;padding:4px 0 8px;">Seleccioná un día</div>`;
+    return;
+  }
   document.getElementById('timesLabel').textContent = `Horarios · ${DAY_FULL_NAMES[editingDay]}`;
   const times = editingSlot.schedule[editingDay];
   const list = document.getElementById('timesList');
@@ -318,6 +352,7 @@ function removeTime(index){
 function clearSlot(){
   editingSlot.name = '';
   DAY_KEYS.forEach(d => editingSlot.schedule[d] = []);
+  DAY_KEYS.forEach(d => editingSlot.enabled[d] = true);
   document.getElementById('editName').value = '';
   renderDayStrip();
   renderTimesPanel();

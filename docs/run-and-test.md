@@ -98,6 +98,18 @@ El dashboard se actualiza solo.
 - Para probar el flujo sin esperar la hora real, agregar al slot 1 el horario del minuto actual en el día de hoy y esperar ≤20 s.
 - `GET /api/status` (con sesión) muestra el estado del driver y sus últimos eventos.
 
+## Day toggle (días activos/desactivados)
+
+Checklist manual (editor → pestaña Casillas → tocar una casilla):
+
+- [ ] Tocar un día **seleccionado** lo deselecciona: el chip se ve apagado, el panel muestra "Seleccioná un día" y las horas de ese día **no se borran**.
+- [ ] `schedule.json` conserva las horas del día desactivado y agrega `"enabled": {..., "día": false}` al slot.
+- [ ] Tocar un día **desactivado** lo reactiva y muestra sus horas guardadas.
+- [ ] Tocar un día **sin horas** copia las horas del día visible (comportamiento existente).
+- [ ] En el dashboard "Hoy", si el día actual está desactivado, las dosis de ese slot no aparecen como pendientes.
+- [ ] "Vaciar casilla" limpia nombre, horarios y deja todos los días activos (`enabled` completo en `true`).
+- [ ] Los slots viejos **sin** `enabled` siguen funcionando (todos los días activos).
+
 ## Solución de problemas
 
 - **`Address already in use`:** otro proceso ocupa el puerto 8000. Encontrarlo con `Get-NetTCPConnection -LocalPort 8000 -State Listen` y cerrarlo, o cambiar `PORT` en `.env`.

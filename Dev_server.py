@@ -227,6 +227,15 @@ def validate_slot(slot):
             if not isinstance(t, str) or not t.strip():
                 return False, 'slot inválido: hora vacía en {} (V4)'.format(day)
             has_time = True
+    enabled = slot.get('enabled')
+    if enabled is not None:
+        if not isinstance(enabled, dict):
+            return False, 'slot inválido: enabled debe ser un objeto'
+        for day, val in enabled.items():
+            if day not in DAY_KEYS:
+                return False, 'slot inválido: día desconocido en enabled ({})'.format(day)
+            if not isinstance(val, bool):
+                return False, 'slot inválido: enabled[{}] debe ser booleano'.format(day)
     name = str(slot.get('name') or '').strip()
     if has_time and not name:
         return False, 'slot inválido: hora sin nombre (V5)'
@@ -364,6 +373,8 @@ class Scheduler(threading.Thread):
             for slot in load_schedule():
                 if not slot.get('name'):
                     continue
+                if slot.get('enabled', {}).get(day, True) is False:
+                    continue
                 times = slot.get('schedule', {}).get(day, [])
                 if hhmm not in times:
                     continue
@@ -384,6 +395,11 @@ SCHED = Scheduler(DRIVER)
 # ---- HTTP Handler ----
 
 class Handler(SimpleHTTPRequestHandler):
+
+    def end_headers(self):
+        # Dev: sin caché para que los cambios de CSS/JS se vean al instante.
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
 
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
