@@ -5,7 +5,8 @@
     "color": "#4fd1ae",
     "schedule": {
       "Dom": [
-        "14:30"
+        "08:00",
+        "16:00"
       ],
       "Lun": [
         "08:00",
@@ -19,10 +20,7 @@
         "08:00",
         "16:00"
       ],
-      "Jue": [
-        "08:00",
-        "16:00"
-      ],
+      "Jue": [],
       "Vie": [
         "08:00",
         "16:00"
@@ -35,11 +33,11 @@
     "enabled": {
       "Dom": true,
       "Lun": false,
-      "Mar": false,
+      "Mar": true,
       "Mie": false,
-      "Jue": false,
-      "Vie": false,
-      "Sab": false
+      "Jue": true,
+      "Vie": true,
+      "Sab": true
     }
   },
   {
