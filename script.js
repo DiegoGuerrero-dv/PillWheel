@@ -18,10 +18,6 @@ const DAY_FULL_NAMES = {
 };
 const SLOT_COUNT = 8;
 
-function emptySchedule(){
-  const s = {}; DAY_KEYS.forEach(d => s[d] = []); return s;
-}
-
 let state = {
   slots: [],      // filled by loadSchedule() after login
   takenLog: {}    // filled by loadTakenLog() after login
@@ -34,16 +30,22 @@ function authHeaders(){
 }
 
 const api = {
-  async login(password){
+  async login(user, password){
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ user, password })
     });
     const data = await res.json().catch(()=> ({}));
-    if(!res.ok || !data.ok) throw new Error(data.error || 'Contraseña incorrecta');
+    if(!res.ok || !data.ok) throw new Error(data.error || 'Credenciales incorrectas');
     authToken = data.token;
     return true;
+  },
+  async logout(){
+    try {
+      await fetch('/api/logout', { method: 'POST', headers: authHeaders() });
+    } catch(e){ /* la sesión local se limpia igual */ }
+    authToken = null;
   },
   async getSchedule(){
     const res = await fetch('/api/schedule', { headers: authHeaders() });
@@ -63,32 +65,25 @@ const api = {
     const res = await fetch('/api/taken', { headers: authHeaders() });
     if(!res.ok) throw new Error('No se pudo cargar el registro de dosis tomadas');
     return res.json();
-  },
-  async markTaken(key, val){
-    const res = await fetch('/api/taken', {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value: val })
-    });
-    if(!res.ok) throw new Error('No se pudo actualizar');
-    return true;
   }
 };
 
 /* ========================= AUTH / NAV ========================= */
 
 function handleLogin(){
+  const user = document.getElementById('loginUser').value;
   const pass = document.getElementById('loginPass').value;
   const errEl = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
   errEl.textContent = '';
   btn.disabled = true;
 
-  api.login(pass)
+  api.login(user, pass)
     .then(loadApp)
     .then(()=>{
       document.getElementById('view-login').classList.add('hidden');
       document.getElementById('view-app').classList.remove('hidden');
+      connectWS();
       renderDashboard();
     })
     .catch(err=>{
@@ -100,18 +95,54 @@ function handleLogin(){
 async function loadApp(){
   const [slots, log] = await Promise.all([api.getSchedule(), api.getTakenLog()]);
   state.slots = slots;
-  state.takenLog = log;
+  // El backend devuelve una lista de registros {key, taken, ts}; lo
+  // aplanamos a un mapa clave -> booleano para las vistas.
+  state.takenLog = Object.fromEntries((log||[]).map(r => [r.key, !!r.taken]));
 }
 
 document.getElementById('loginPass').addEventListener('keydown', e=>{
   if(e.key === 'Enter') handleLogin();
 });
 
+/* ========================= WEBSOCKET PUSH (H4/H6) ========================= */
+
+let ws = null;
+let wsRetry = 0;
+
+function connectWS(){
+  if(!authToken) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws?token=${encodeURIComponent(authToken)}`);
+  ws.onopen = ()=>{ wsRetry = 0; };
+  ws.onmessage = ev=>{
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch(e){ return; }
+    if(msg.type === 'on_pill_taken'){
+      state.takenLog[msg.key] = !!msg.taken;
+      renderDashboard();
+    }
+  };
+  ws.onclose = ()=>{
+    ws = null;
+    if(authToken){
+      wsRetry += 1;
+      setTimeout(connectWS, Math.min(1000 * Math.pow(2, wsRetry), 15000));
+    }
+  };
+}
+
+function closeWS(){
+  if(ws){ ws.onclose = null; ws.close(); ws = null; }
+  wsRetry = 0;
+}
+
 function handleLogout(){
-  authToken = null;
-  document.getElementById('view-app').classList.add('hidden');
-  document.getElementById('view-login').classList.remove('hidden');
-  document.getElementById('loginPass').value = '';
+  closeWS();
+  api.logout().finally(()=>{
+    document.getElementById('view-app').classList.add('hidden');
+    document.getElementById('view-login').classList.remove('hidden');
+    document.getElementById('loginPass').value = '';
+  });
 }
 
 function switchTab(tab){
@@ -144,15 +175,6 @@ function getTodayDoses(){
 
 function isTaken(dose){
   return !!state.takenLog[`${dateKey(new Date())}_${dose.slotId}_${dose.time}`];
-}
-
-function toggleTaken(dose){
-  const key = `${dateKey(new Date())}_${dose.slotId}_${dose.time}`;
-  const newVal = !state.takenLog[key];
-  api.markTaken(key, newVal).then(()=>{
-    state.takenLog[key] = newVal;
-    renderDashboard();
-  }).catch(err=> showToast(err.message));
 }
 
 function renderDashboard(){
@@ -199,7 +221,7 @@ function renderDashboard(){
           <div class="s">Casilla ${dose.slotId}</div>
         </div>
         <div class="dose-time">${dose.time}</div>
-        <button class="dose-check" onclick='toggleTaken(${JSON.stringify(dose)})'>${taken?'✓':''}</button>
+        <span class="dose-check">${taken?'✓':''}</span>
       </div>`;
   }).join('');
 }

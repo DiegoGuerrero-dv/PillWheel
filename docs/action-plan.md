@@ -4,7 +4,12 @@
 
 **Documento relacionado:** [architecture.md](architecture.md) — arquitectura actual y objetivo.
 
-**Ejecución:** el plan se ejecutará por el flujo SDD (propuesta → specs → diseño → tareas → apply → verify) si el usuario lo confirma.
+**Ejecución:** el plan se ejecutó por el flujo SDD (propuesta → specs → diseño → tareas → apply → verify), en **2 PRs encadenados** (stacked-to-main):
+
+- **PR 1 — Fases 1 y 2 (parte 1):** V1–V10 + scheduler + `DriverPort` + `DevDriver` + WS + `DEV_TOKEN`. Commits por unidad de trabajo, smoke test manual al cierre.
+- **PR 2 — Fases 2 (parte 2) y 3:** endpoints de la frontera F2 (`/api/status`, WS `/ws`, `POST /api/taken` con device token), frontend (login con usuario, logout, push WS, V3/V9/V10) y docs.
+
+> Estado 2026-08-01: **PR 1 verificado** (smoke test OK). **PR 2 implementado y verificado** (smoke test: login/logout, 401s, V9, WS push, scheduler→driver→log; datos legados V4/V5 limpiados). Pendiente solo el contrato `esp32-contract.md` (H4/H5), que necesita decisión de hardware.
 
 ---
 

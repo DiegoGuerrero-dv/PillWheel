@@ -43,16 +43,17 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: HAL + Scheduler (PR 2)
 
-- [ ] 3.1 `Dev_server.py` DriverPort (Protocol) + DevDriver mock que simula GPIO y auto-confirma toma (H5/H6)
-- [ ] 3.2 `Dev_server.py` scheduler thread: dispara `dispense`/`ring` según schedule (timer en backend)
-- [ ] 3.3 `Dev_server.py` `/api/taken` POST: solo vía adapter con device token F2, valida origen (V9)
-- [ ] 3.4 `Dev_server.py` WS hub RFC 6455 mínimo en stdlib (~100 líneas) + push de `on_pill_taken`
-- [ ] 3.5 `Dev_server.py` `/api/status` (sesión) → `driver.status()`
+- [x] 3.1 `Dev_server.py` DriverPort (Protocol) + DevDriver mock que simula GPIO y auto-confirma toma (H5/H6)
+- [x] 3.2 `Dev_server.py` scheduler thread: dispara `dispense`/`ring` según schedule (timer en backend)
+- [x] 3.3 `Dev_server.py` `/api/taken` POST: solo vía adapter con device token F2, valida origen (V9)
+- [x] 3.4 `Dev_server.py` WS hub RFC 6455 mínimo en stdlib (~100 líneas) + push de `on_pill_taken`
+- [x] 3.5 `Dev_server.py` `/api/status` (sesión) → `driver.status()`
 
 ## Phase 4: Frontend y Documentación (PR 2)
 
-- [ ] 4.1 `script.js` renderDashboard: escapar datos, sin onclick con JSON ni innerHTML crudo (V3)
-- [ ] 4.2 `script.js`/`index.html`: login con usuario+contraseña, botón logout, token de sesión
-- [ ] 4.3 `script.js` cliente WS `/ws`: actualiza UI al recibir `on_pill_taken`; reconnect/fallback
-- [ ] 4.4 `docs/architecture.md` + `docs/action-plan.md`: checklist V1–V10 cerrado + contrato H4
-- [ ] 4.5 Smoke tests `docs/run-and-test.md` (login/logout, 401s, validación, purga, WS)
+- [x] 4.1 `script.js` renderDashboard: escapar datos, sin onclick con JSON ni innerHTML crudo (V3)
+- [x] 4.2 `script.js`/`index.html`: login con usuario+contraseña, botón logout, token de sesión
+- [x] 4.3 `script.js` cliente WS `/ws`: actualiza UI al recibir `on_pill_taken`; reconnect/fallback
+- [x] 4.4 `docs/architecture.md` + `docs/action-plan.md`: checklist V1–V10 cerrado + contrato H4
+- [x] 4.5 Smoke tests `docs/run-and-test.md` (login/logout, 401s, validación, purga, WS)
+
