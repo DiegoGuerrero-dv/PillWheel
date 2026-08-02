@@ -65,6 +65,22 @@ const api = {
     const res = await fetch('/api/taken', { headers: authHeaders() });
     if(!res.ok) throw new Error('No se pudo cargar el registro de dosis tomadas');
     return res.json();
+  },
+  async getDriverStatus(){
+    const res = await fetch('/api/status', { headers: authHeaders() });
+    if(!res.ok) throw new Error('No se pudo leer el estado del driver');
+    return res.json();
+  },
+  // Simulación local del sensor (DevDriver): el firmware real reporta
+  // slot_open/slot_closed como eventos; acá se simulan con este endpoint.
+  async simDriver(action, slotId){
+    const res = await fetch('/api/driver/sim', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, slot_id: slotId })
+    });
+    if(!res.ok) throw new Error('No se pudo simular el sensor');
+    return res.json();
   }
 };
 
@@ -85,6 +101,7 @@ function handleLogin(){
       document.getElementById('view-app').classList.remove('hidden');
       connectWS();
       renderDashboard();
+      startPendingWatcher();
     })
     .catch(err=>{
       errEl.textContent = err.message || 'No se pudo conectar con el servidor';
@@ -137,6 +154,8 @@ function closeWS(){
 }
 
 function handleLogout(){
+  stopPendingWatcher();
+  hideDoseModal();
   closeWS();
   api.logout().finally(()=>{
     document.getElementById('view-app').classList.add('hidden');
@@ -225,6 +244,85 @@ function renderDashboard(){
         <span class="dose-check">${taken?'✓':''}</span>
       </div>`;
   }).join('');
+}
+
+/* ========================= DOSE MODAL (dosis pendiente) ========================= */
+
+let modalDose = null;   // dosis actualmente mostrada en el modal
+let pendingTimer = null;
+
+function showDoseModal(dose){
+  modalDose = dose;
+  const slot = state.slots.find(s=>s.id===dose.slotId);
+  document.getElementById('doseModalSlot').textContent = slot ? `Casilla ${slot.id}` : `Casilla ${dose.slotId}`;
+  document.getElementById('doseModalTime').textContent = dose.time;
+  document.getElementById('doseModalName').textContent = dose.name;
+  document.getElementById('doseModal').classList.remove('hidden');
+}
+
+function hideDoseModal(){
+  document.getElementById('doseModal').classList.add('hidden');
+  modalDose = null;
+}
+
+// Detección: la dosis cuya hora ya llegó, aún no tomada Y pendiente en el
+// backend (el scheduler la dispensó). Sin sensor, la dosis queda pendiente
+// hasta confirmarla acá (Decisión B). Si el server estaba apagado a la hora,
+// nunca se dispensó y el modal no aparece (no hay nada que confirmar).
+function findPendingDose(pendingSlots){
+  const now = nowHHMM();
+  return getTodayDoses().find(dose =>
+    !isTaken(dose) && dose.time <= now && pendingSlots.includes(dose.slotId)
+  ) || null;
+}
+
+// "Abrir y tomar" usa delegación de eventos (V3: sin onclick en strings).
+document.getElementById('doseModal').addEventListener('click', ev=>{
+  if(ev.target.id !== 'doseModalTake') return;
+  const dose = modalDose;
+  if(!dose) return;
+  hideDoseModal();
+  // Simula el sensor: abrir + cerrar el compartimiento confirma la toma.
+  // El endpoint dice si el cierre realmente confirmó (evita falso éxito).
+  api.simDriver('open', dose.slotId)
+    .then(()=> api.simDriver('close', dose.slotId))
+    .then(res=>{
+      if(res && res.confirmed){
+        showToast('Dosis marcada como tomada');
+      } else {
+        showToast('No había dosis pendiente en esta casilla');
+      }
+    })
+    .catch(err=> showToast(err.message))
+    .finally(()=> renderDashboard());
+});
+
+function startPendingWatcher(){
+  stopPendingWatcher();
+  checkPendingDose();
+  pendingTimer = setInterval(checkPendingDose, 15000);
+}
+
+function stopPendingWatcher(){
+  if(pendingTimer){ clearInterval(pendingTimer); pendingTimer = null; }
+}
+
+async function checkPendingDose(){
+  if(document.getElementById('view-app').classList.contains('hidden')) return;
+  let pendingSlots = [];
+  try {
+    const st = await api.getDriverStatus();
+    pendingSlots = Object.keys(st.pending || {}).map(Number);
+  } catch(e){ return; } // sin conexión: no cambiar el modal
+  const dose = findPendingDose(pendingSlots);
+  const modalOpen = !document.getElementById('doseModal').classList.contains('hidden');
+  if(dose && !modalOpen){
+    showDoseModal(dose);
+  } else if(!dose && modalOpen){
+    // La dosis ya no está pendiente (confirmada por otro lado): cerrar.
+    hideDoseModal();
+    renderDashboard();
+  }
 }
 
 /* ========================= MANAGE / BLISTER GRID ========================= */

@@ -27,7 +27,7 @@ El servidor escucha en `127.0.0.1` por defecto. Para exponerlo en la LAN: `pytho
 ## Probar manualmente (UI)
 
 1. Entrar con `admin` / `admin1234`.
-2. Pestaña **Hoy**: hero con la próxima dosis y lista de dosis de hoy. El ✓ de una dosis se marca cuando el dispositivo/adapter confirma la toma (el navegador ya no escribe en el log; ver seguridad V9). Con el adapter mock, la confirmación llega por WebSocket cuando el scheduler dispara la dosis.
+2. Pestaña **Hoy**: hero con la próxima dosis y lista de dosis de hoy. El ✓ de una dosis se marca cuando el driver confirma la toma por sensor (`slot_open` + `slot_closed`, o su simulación con el modal / `POST /api/driver/sim`); el navegador ya no escribe en el log (ver seguridad V9).
 3. Pestaña **Casillas**: grid de 8 celdas. Tocar una celda abre el editor: nombre, color, días y horarios. Guardar persiste en `schedule.json`. "Vaciar casilla" limpia nombre y horarios.
 4. Cerrar sesión con el botón ⏻ del topbar (invalida el token en el servidor).
 
@@ -93,10 +93,28 @@ El dashboard se actualiza solo.
 
 ## Scheduler / HAL (mock)
 
-- El scheduler revisa `schedule.json` cada 20 s y llama `DRIVER.dispense` cuando llega la hora de una dosis de hoy.
-- `DevDriver` simula el GPIO del ESP32 y **auto-confirma la toma** (`on_pill_taken`): escribe el record en `taken_log.json` y lo pushea por WS.
+- El scheduler revisa `schedule.json` cada 20 s. Cuando llega la hora de una dosis dispara el **combo HAL**: `dispense` → `ring` (buzzer) → `oled_show` (OLED) → `led_on` (LED del slot).
+- La dosis queda **pendiente** (Decisión B: el DevDriver NO auto-confirma). Mientras haya pendientes, el scheduler re-envía `ring()` cada ciclo (**re-alarma**) y el LED sigue encendido.
+- La toma se confirma con la secuencia del sensor: `slot_open` + `slot_closed` (en el cierre: `led_off` + `on_pill_taken` → escribe `taken_log.json` y pushea por WS). Sin hardware, se simula con el botón del modal o `POST /api/driver/sim`.
 - Para probar el flujo sin esperar la hora real, agregar al slot 1 el horario del minuto actual en el día de hoy y esperar ≤20 s.
-- `GET /api/status` (con sesión) muestra el estado del driver y sus últimos eventos.
+- `GET /api/status` (con sesión) muestra el estado del driver: LEDs, pendientes, OLED y últimos eventos `[hal]` con timestamp.
+
+### Modal de dosis pendiente
+
+- Cuando la hora de una dosis ya llegó y no está tomada, la UI muestra el modal (casilla, hora, nombre, botón **"Abrir y tomar"**).
+- Persiste ante recarga: si la dosis sigue sin confirmar (no está en `taken_log.json`), el modal vuelve a aparecer.
+- "Abrir y tomar" simula el sensor: `open` + `close` → confirma la dosis, cierra el modal y tacha la dosis en el dashboard (via WS).
+
+### Smoke test HAL (checklist)
+
+- [ ] Al arrancar el server aparece en consola `[hal] {ts} init() -> None`.
+- [ ] Al dispararse una dosis (horario del minuto actual), la consola muestra `dispense`, `ring`, `oled_show` y `led_on` en ese orden, con timestamp.
+- [ ] `GET /api/status` (con sesión) refleja `leds`, `pending` y `oled`.
+- [ ] Mientras la dosis no se confirma, `ring` se repite en los ciclos siguientes (re-alarma).
+- [ ] `POST /api/driver/sim` con `{"action":"open","slot_id":N}` y luego `{"action":"close","slot_id":N}` (con sesión) → `200` con `"confirmed": true`, consola muestra `slot_open` y `slot_closed` + `led_off`, y la dosis queda marcada tomada (el `on_pill_taken` no imprime en consola: escribe `taken_log.json` y pushea por WS).
+- [ ] `POST /api/driver/sim` con `{"action":"explode","slot_id":1}` → `400`; con `{"action":"open","slot_id":9}` → `400`; sin sesión → `401`.
+- [ ] La dosis confirmada deja de re-alarmar (no aparece más `ring` en el ciclo siguiente).
+- [ ] Modal: aparece al llegar la hora; persiste al recargar si no se tomó; "Abrir y tomar" lo cierra y tacha la dosis.
 
 ## Day toggle (días activos/desactivados)
 

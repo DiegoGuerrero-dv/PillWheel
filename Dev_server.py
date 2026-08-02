@@ -13,8 +13,9 @@ Fronteras:
 - F2 (backend <-> dispositivo): device token (DEV_TOKEN) para el adapter
   del hardware (contrato H4/H6). /api/taken solo acepta reportes con ese
   token; el navegador ya no escribe claves arbitrarias (V9). El scheduler
-  interno llama al driver (DevDriver) directamente y el driver
-  auto-confirma la toma.
+  interno llama al driver (DevDriver) directamente; el driver NO
+  auto-confirma la toma: la dosis se marca tomada solo con la secuencia
+  de sensor slot_open → slot_closed (o su simulación /api/driver/sim).
 
 Seguridad:
 - /schedule.json, /taken_log.json y /Dev_server.py no se sirven sin
@@ -92,25 +93,78 @@ RETENTION_DAYS = int(os.environ.get('RETENTION_DAYS', '182'))
 def read_json(path, default):
     if not os.path.exists(path):
         return default
-    with open(path, 'r', encoding='utf-8') as f:
-        raw = f.read().strip()
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            raw = f.read().strip()
+    except PermissionError:
+        # Windows/OneDrive: el archivo puede estar siendo reemplazado por
+        # un writer concurrente (W1); reintento corto antes de rendirse.
+        time.sleep(0.05)
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                raw = f.read().strip()
+        except PermissionError:
+            # Lectura fallida de forma persistente: levantar en vez de
+            # devolver default, para que un RMW no sobrescriba todo el
+            # archivo con un solo elemento en silencio.
+            raise
     if not raw:
         # Archivo vacío (0 bytes) — pasa esto en vez de tronar, y lo
-        # deja con datos válidos para la próxima vez.
-        write_json(path, default)
+        # deja con datos válidos para la próxima vez. El write queda
+        # bajo IO_LOCK para no pisar un save concurrente.
+        with IO_LOCK:
+            write_json(path, default)
         return default
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         # JSON corrupto — mismo tratamiento: no tronar el servidor,
         # solo reiniciar ese archivo a su valor por defecto.
-        write_json(path, default)
+        with IO_LOCK:
+            write_json(path, default)
         return default
 
 
 def write_json(path, data):
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    # Escritura atómica (W1): volcar a un temporal y reemplazar con
+    # os.replace. El scheduler lee schedule.json cada 20 s y hay writes
+    # concurrentes de taken_log bajo ThreadingHTTPServer; sin esto, un
+    # lector en la ventana truncar->dump veía JSON corrupto y podía
+    # resetear el archivo a [] en silencio.
+    #
+    # Windows/NTFS + OneDrive: os.replace y open() pueden fallar con
+    # PermissionError si otro hilo tiene el archivo abierto (Python no
+    # pide FILE_SHARE_DELETE), por eso hay reintentos cortos. El tmp es
+    # único por proceso/hilo para que dos escritores concurrentes no
+    # compartan el mismo archivo temporal.
+    tmp = f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
+    try:
+        last_err = None
+        for attempt in range(4):
+            try:
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
+                return
+            except PermissionError as e:
+                last_err = e
+                time.sleep(0.05 * (attempt + 1))
+        # Agotó reintentos: fallar con la señal original (PermissionError),
+        # no con un RuntimeError sin excepción activa.
+        raise last_err
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+# Serializa el read-modify-write de taken_log.json/schedule.json entre
+# hilos (on_pill_taken, POST /api/taken, POST /api/schedule y writes de
+# recuperación bajo ThreadingHTTPServer): evita lost updates (W1).
+# RLock permite reentrada cuando read_json/load_taken_log escriben
+# (recuperación/migración) mientras el caller ya tiene el lock.
+IO_LOCK = threading.RLock()
 
 
 # ---- Auth F1 (sesión en memoria) ----
@@ -174,7 +228,9 @@ def load_taken_log():
             {'key': str(k), 'taken': v, 'ts': _ts_from_key(str(k))}
             for k, v in data.items()
         ]
-        write_json(LOG_PATH, data)
+        # Migración serializada (W1): no pisar un RMW concurrente.
+        with IO_LOCK:
+            write_json(LOG_PATH, data)
     if not isinstance(data, list):
         data = []
     return data
@@ -253,7 +309,7 @@ class DriverPort(Protocol):
         ...
 
     def ring(self) -> None:
-        """Activa la alerta/sonido del dispositivo."""
+        """Activa la alerta/sonido del dispositivo (buzzer)."""
         ...
 
     def status(self) -> dict:
@@ -264,30 +320,125 @@ class DriverPort(Protocol):
         """Evento de vuelta: el dispositivo reporta que la dosis fue tomada."""
         ...
 
+    def init(self) -> None:
+        """Inicializa el driver al arrancar el sistema."""
+        ...
+
+    def oled_show(self, slot_id, name, time) -> None:
+        """Muestra en la pantalla OLED la pastilla y hora del slot indicado."""
+        ...
+
+    def led_on(self, slot_id) -> None:
+        """Enciende el LED del slot indicado (toca tomar la dosis)."""
+        ...
+
+    def led_off(self, slot_id) -> None:
+        """Apaga el LED del slot indicado (toma confirmada)."""
+        ...
+
+    def slot_open(self, slot_id) -> None:
+        """Evento del sensor: el usuario abrió el compartimiento del slot."""
+        ...
+
+    def slot_closed(self, slot_id) -> bool:
+        """Evento del sensor: el usuario cerró el compartimiento del slot.
+        True si el cierre confirmó una o más dosis pendientes del slot."""
+        ...
+
 
 class DevDriver:
-    """Adaptador mock (H5/H6): simula GPIO del ESP32 (motor, buzzer, sensor)
-    sin hardware. Al dispensar, auto-confirma la toma vía on_pill_taken."""
+    """Adaptador mock (H5/H6): simula GPIO del ESP32 (motor, buzzer, sensor,
+    LED por slot, OLED) sin hardware. NO auto-confirma la toma: la confirmación
+    ocurre solo cuando el sensor reporta apertura + cierre (slot_open/slot_closed)
+    o su simulación local (/api/driver/sim)."""
 
     def __init__(self, on_pill_taken):
         self._on_pill_taken = on_pill_taken
         self._events = []
+        self._leds = {}      # slot_id -> bool
+        self._pending = {}   # (slot_id, time) -> True (dosis esperando confirmación)
+        self._opened = set() # slots con apertura reportada (secuencia open → close)
+        self._oled = None    # último texto mostrado
+        self._lock = threading.Lock()  # estado compartido entre scheduler y handler
+
+    def _log(self, action, result=None, **kw):
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        args = ', '.join(f'{k}={v}' for k, v in kw.items())
+        print(f'[hal] {ts} {action}({args}) -> {result}')
+        with self._lock:
+            self._events.append({'action': action, 'ts': ts, 'kw': kw})
+
+    def init(self) -> None:
+        self._log('init')
 
     def dispense(self, slot_id, time) -> bool:
-        self._events.append(('dispense', slot_id, time))
-        # Simula el sensor: la pastilla salió y el dispositivo confirma la toma.
-        self._on_pill_taken(slot_id, time)
+        self._log('dispense', True, slot_id=slot_id, time=time)
+        # La dosis queda pendiente: el LED enciende y se espera el sensor.
+        # Clave (slot_id, time): un slot con varias dosis al día no se pisa.
+        with self._lock:
+            self._pending[(slot_id, time)] = True
         return True
 
     def ring(self) -> None:
-        self._events.append(('ring', None, None))
+        self._log('ring')
+
+    def oled_show(self, slot_id, name, time) -> None:
+        self._log('oled_show', None, slot_id=slot_id, name=name, time=time)
+        with self._lock:
+            self._oled = f'{name} {time}'
+
+    def led_on(self, slot_id) -> None:
+        self._log('led_on', None, slot_id=slot_id)
+        with self._lock:
+            self._leds[slot_id] = True
+
+    def led_off(self, slot_id) -> None:
+        self._log('led_off', None, slot_id=slot_id)
+        with self._lock:
+            self._leds[slot_id] = False
+
+    def slot_open(self, slot_id) -> None:
+        with self._lock:
+            self._opened.add(slot_id)
+        self._log('slot_open', None, slot_id=slot_id)
+
+    def slot_closed(self, slot_id) -> bool:
+        confirmed = False
+        times = []
+        with self._lock:
+            # Solo confirma si hubo apertura previa (secuencia open → close).
+            # Un cierre sin apertura (glitch, rebote, replay) NO confirma.
+            if slot_id in self._opened:
+                times = [t for (s, t) in self._pending if s == slot_id]
+                for t in times:
+                    del self._pending[(slot_id, t)]
+                self._opened.discard(slot_id)
+                if times:
+                    self._leds[slot_id] = False
+                    confirmed = True
+        self._log('slot_closed', confirmed, slot_id=slot_id)
+        # on_pill_taken fuera del lock (escribe log + pushea WS).
+        for t in times:
+            self._on_pill_taken(slot_id, t)
+        return confirmed
+
+    def pending_slots(self):
+        with self._lock:
+            return list({s for (s, t) in self._pending})
 
     def status(self) -> dict:
-        return {
-            'driver': 'DevDriver (mock GPIO)',
-            'ok': True,
-            'last_events': self._events[-5:],
-        }
+        with self._lock:
+            pending = {}
+            for (s, t) in self._pending:
+                pending.setdefault(str(s), []).append(t)
+            return {
+                'driver': 'DevDriver (mock GPIO)',
+                'ok': True,
+                'leds': dict(self._leds),
+                'pending': {k: sorted(v) for k, v in pending.items()},
+                'oled': self._oled,
+                'last_events': self._events[-5:][::-1],  # más reciente primero
+            }
 
 
 # ---- WS hub mínimo RFC 6455 (stdlib) ----
@@ -340,15 +491,16 @@ def on_pill_taken(slot_id, time):
     """El adapter confirmó una toma: la registra en el log y la pushea por WS."""
     today = datetime.now().strftime('%Y-%m-%d')
     key = f'{today}_{slot_id}_{time}'
-    entries = load_taken_log()
-    entries = [e for e in entries if e.get('key') != key]
     record = {
         'key': key,
         'taken': True,
         'ts': datetime.now().isoformat(timespec='seconds'),
     }
-    entries.append(record)
-    save_taken_log(entries)
+    with IO_LOCK:
+        entries = load_taken_log()
+        entries = [e for e in entries if e.get('key') != key]
+        entries.append(record)
+        save_taken_log(entries)
     WS_HUB.broadcast({'type': 'on_pill_taken', 'key': key, 'taken': True, 'ts': record['ts']})
 
 
@@ -364,13 +516,26 @@ class Scheduler(threading.Thread):
         self.driver = driver
         self.interval = interval
         self._last_fired = set()
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
 
     def run(self):
-        while True:
+        while not self._stop.is_set():
             now = datetime.now()
+            today = now.strftime('%Y-%m-%d')
+            # Poda: el dedupe solo importa para hoy; descartar días viejos.
+            self._last_fired = {k for k in self._last_fired if k.startswith(today)}
             day = DAY_KEYS[(now.weekday() + 1) % 7]
             hhmm = now.strftime('%H:%M')
-            for slot in load_schedule():
+            try:
+                slots = load_schedule()
+            except OSError:
+                # Lectura fallida (p.ej. PermissionError por OneDrive):
+                # no matar el thread; se reintenta el próximo ciclo.
+                slots = []
+            for slot in slots:
                 if not slot.get('name'):
                     continue
                 if slot.get('enabled', {}).get(day, True) is False:
@@ -384,9 +549,16 @@ class Scheduler(threading.Thread):
                 if fired_key in self._last_fired:
                     continue
                 self._last_fired.add(fired_key)
-                print(f'[scheduler] dispense slot {slot["id"]} {hhmm}')
+                print(f'[scheduler] dosis {slot["id"]} {hhmm}')
+                # Combo HAL: dispensar, alarma (buzzer), OLED y LED del slot.
                 self.driver.dispense(slot['id'], hhmm)
-            time.sleep(self.interval)
+                self.driver.ring()
+                self.driver.oled_show(slot['id'], slot.get('name', ''), hhmm)
+                self.driver.led_on(slot['id'])
+            # Re-alarma: mientras haya dosis pendientes, el buzzer sigue sonando.
+            if self.driver.pending_slots():
+                self.driver.ring()
+            self._stop.wait(self.interval)
 
 
 SCHED = Scheduler(DRIVER)
@@ -546,14 +718,17 @@ class Handler(SimpleHTTPRequestHandler):
             ok, error = validate_slot(body)
             if not ok:
                 return self._send_json(400, {'error': error})
-            slots = load_schedule()
-            slot_id = str(int(body.get('id')))
-            idx = next((i for i, s in enumerate(slots) if str(s.get('id')) == slot_id), None)
-            if idx is None:
-                slots.append(body)  # insert válido (V8)
-            else:
-                slots[idx] = body   # update
-            save_schedule(slots)
+            # RMW serializado: dos saves concurrentes de schedule.json no
+            # se pisan entre sí (W1).
+            with IO_LOCK:
+                slots = load_schedule()
+                slot_id = str(int(body.get('id')))
+                idx = next((i for i, s in enumerate(slots) if str(s.get('id')) == slot_id), None)
+                if idx is None:
+                    slots.append(body)  # insert válido (V8)
+                else:
+                    slots[idx] = body   # update
+                save_schedule(slots)
             return self._send_json(200, {'ok': True})
 
         if path == '/api/taken':
@@ -567,16 +742,37 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(400, {'error': 'clave inválida'})
             if not isinstance(value, bool):
                 return self._send_json(400, {'error': 'value debe ser booleano'})
-            entries = load_taken_log()
-            entries = [e for e in entries if e.get('key') != key]
-            entries.append({
-                'key': key,
-                'taken': value,
-                'ts': datetime.now().isoformat(timespec='seconds'),
-            })
-            save_taken_log(entries)
+            with IO_LOCK:
+                entries = load_taken_log()
+                entries = [e for e in entries if e.get('key') != key]
+                entries.append({
+                    'key': key,
+                    'taken': value,
+                    'ts': datetime.now().isoformat(timespec='seconds'),
+                })
+                save_taken_log(entries)
             WS_HUB.broadcast({'type': 'on_pill_taken', 'key': key, 'taken': value})
             return self._send_json(200, {'ok': True})
+
+        if path == '/api/driver/sim':
+            # Simulación local del sensor (solo DevDriver): el firmware real
+            # reporta slot_open/slot_closed como eventos F2, no por aquí.
+            if not self._require_session():
+                return
+            if not isinstance(body, dict):
+                return self._send_json(400, {'error': 'json inválido'})
+            action = body.get('action')
+            slot_id = body.get('slot_id')
+            if action not in ('open', 'close'):
+                return self._send_json(400, {'error': 'acción inválida (open|close)'})
+            if not isinstance(slot_id, int) or isinstance(slot_id, bool) or not 1 <= slot_id <= 8:
+                return self._send_json(400, {'error': 'slot_id inválido'})
+            if action == 'open':
+                DRIVER.slot_open(slot_id)
+                # Abrir no confirma; el cierre es el que confirma.
+                return self._send_json(200, {'ok': True, 'confirmed': False})
+            confirmed = DRIVER.slot_closed(slot_id)
+            return self._send_json(200, {'ok': True, 'confirmed': confirmed})
 
         self._send_json(404, {'error': 'no encontrado'})
 
@@ -605,7 +801,9 @@ if __name__ == '__main__':
         print('[dev_server] Para credenciales propias, creá un .env a partir de .env.example.')
 
     print(f'Pastillero (modo desarrollo) -> http://localhost:{PORT}  (bind: {_host})')
-    # HAL H4/H6: el scheduler corre en segundo plano y dispara DRIVER.dispense
-    # cuando hay una dosis pendiente; DevDriver auto-confirma la toma.
+    # HAL H4/H6: el driver registra su arranque y el scheduler corre en segundo
+    # plano; cuando hay una dosis pendiente dispara dispense/ring/oled/led y la
+    # toma se confirma solo con el sensor (o su simulación).
+    DRIVER.init()
     SCHED.start()
     ThreadingHTTPServer((_host, PORT), Handler).serve_forever()

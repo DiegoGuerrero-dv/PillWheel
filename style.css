@@ -213,6 +213,15 @@ input::placeholder{color:var(--text-muted);opacity:1;}
 .sheet-actions{display:flex;gap:10px;margin-top:6px;}
 .sheet-actions .btn{flex:1;}
 
+/* ---------- dose modal (dosis pendiente) ---------- */
+.dose-modal{text-align:center;padding:26px 22px 28px;}
+.dose-modal-icon{font-size:40px;line-height:1;margin-bottom:10px;}
+.dose-modal-title{font-size:17px;font-weight:800;color:var(--text);margin-bottom:16px;}
+.dose-modal-slot{font-size:12px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+.dose-modal-time{font-size:44px;font-weight:900;color:var(--text);font-family:var(--mono);line-height:1.1;margin-bottom:8px;}
+.dose-modal-name{font-size:15px;color:var(--text-muted);margin-bottom:20px;}
+.dose-modal-btn{width:100%;padding:14px 0;font-size:16px;}
+
 /* toast */
 .toast{
   position:fixed;left:50%;bottom:24px;transform:translateX(-50%);

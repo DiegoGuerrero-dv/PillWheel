@@ -35,9 +35,11 @@ Dev_server.py (ThreadingHTTPServer + SimpleHTTPRequestHandler)
    ├── GET  /api/taken          → devuelve log de dosis (sesión)
    ├── POST /api/taken          → reporte del adapter, solo device token F2 (V9)
    ├── GET  /api/status         → estado del driver (sesión)
+   ├── POST /api/driver/sim     → simula sensor open/close (sesión F1, solo DevDriver)
    ├── GET  /ws                 → WebSocket de push (sesión vía query)
-   ├── scheduler (thread)       → cada 20 s llama DRIVER.dispense (H3/H4)
-   │        └── DevDriver ──on_pill_taken──► log + WS push (H6)
+   ├── scheduler (thread)       → cada 20 s, por dosis: dispense → ring → oled_show → led_on;
+   │        │                     al final del ciclo: re-alarma si quedan pendientes (H3/H4)
+   │        └── DevDriver ──slot_closed (o sim)──► led_off + on_pill_taken ──► log + WS push (H6)
    └── static: /, /index.html, /style.css, /script.js
    │
    ▼
@@ -60,10 +62,13 @@ Frontera F2 (dispositivo): device token `DEV_TOKEN` (config), usado por el adapt
 | GET | `/api/taken` | F1 | — | 200 lista de records / 401 |
 | POST | `/api/taken` | F2 (device token) | `{"key": "YYYY-MM-DD_1_08:00", "value": true}` | 200 `{"ok": true}` / 400 / 403 |
 | GET | `/api/status` | F1 | — | 200 estado del driver / 401 |
+| POST | `/api/driver/sim` | F1 (sesión) | `{"action": "open"\|"close", "slot_id": 1..8}` | 200 `{"ok": true}` / 400 / 401 |
 | GET | `/ws?token=<sesión>` | F1 (query) | — | 101 Switching Protocols / 401 |
 | GET | `/`, `/index.html`, `/style.css`, `/script.js` | No | — | 200 archivo estático |
 
-WebSocket: tras el handshake RFC 6455, el backend pushea `{"type": "on_pill_taken", "key": "...", "taken": true}` cuando el adapter confirma una toma.
+WebSocket: tras el handshake RFC 6455, el backend pushea `{"type": "on_pill_taken", "key": "...", "taken": true}` cuando el driver confirma una toma.
+
+`POST /api/driver/sim` simula el sensor de apertura/cierre del DevDriver (sin hardware): `open`/`close` validados y `slot_id` entero 1..8 → 400 si inválido. El firmware real **no** usa esta ruta: reporta `slot_open`/`slot_closed` como eventos `POST /events` (ver [esp32-contract.md](esp32-contract.md)).
 
 ## Modelo de datos
 
@@ -159,11 +164,11 @@ Limitación documentada (fuera de alcance): el backend dev no hace HTTPS/TLS.
 
 Con la arquitectura hexagonal, el firmware **ya no reimplementa el servidor web**: el backend sigue siendo el punto de entrada del navegador, y el ESP32 pasa a ser un **adaptador del puerto de hardware**. Para que el dispositivo se integre:
 
-1. El firmware implementa el contrato `DriverPort` (comandos `dispense`/`ring` y reporte de eventos), no las rutas `/api/*`.
+1. El firmware implementa el contrato `DriverPort` (comandos `dispense`/`ring`/`oled`/`led` y reporte de eventos), no las rutas `/api/*`.
 2. El backend expone hacia el dispositivo una API de integración con auth propia (Frontera 2), distinta del token del navegador.
 3. **No** exponer `schedule.json`/`taken_log.json` como estáticos (registrar rutas explícitas, no `serveStatic` del directorio completo).
 4. Mantener el mismo formato de claves del log (`YYYY-MM-DD_slotId_HH:MM`), que el cliente ya genera.
-5. El contrato de integración se especifica en `docs/esp32-contract.md` (pendiente de escribir en la Fase 2 del plan).
+5. El contrato de integración está especificado en [docs/esp32-contract.md](esp32-contract.md).
 
 ## Arquitectura objetivo: Hexagonal (Ports & Adapters / HAL)
 
@@ -183,7 +188,7 @@ Browser ──/api/*──► Backend (núcleo) ──DriverPort──► Adapte
                         └────── eventos (log) ◄─────────┘
 ```
 
-### Contrato del puerto (borrador)
+### Contrato del puerto
 
 ```python
 from typing import Protocol
@@ -195,30 +200,55 @@ class DriverPort(Protocol):
         """Dispensa la casilla. Devuelve True si el dispositivo aceptó la acción."""
         ...
 
-    def ring(self) -> bool:
-        """Activa la alerta/sonido del dispositivo."""
+    def ring(self) -> None:
+        """Activa la alerta/sonido del dispositivo (buzzer)."""
         ...
 
     def status(self) -> dict:
-        """Estado del dispositivo: conectado, batería, errores."""
+        """Estado del dispositivo: conectado, LEDs, pendientes, último evento."""
+        ...
+
+    def init(self) -> None:
+        """Inicializa el driver al arrancar el sistema."""
+        ...
+
+    def oled_show(self, slot_id: int, name: str, time: str) -> None:
+        """Muestra en la pantalla OLED la pastilla y hora del slot indicado."""
+        ...
+
+    def led_on(self, slot_id: int) -> None:
+        """Enciende el LED del slot indicado (toca tomar la dosis)."""
+        ...
+
+    def led_off(self, slot_id: int) -> None:
+        """Apaga el LED del slot indicado (toma confirmada)."""
+        ...
+
+    def slot_open(self, slot_id: int) -> None:
+        """Evento del sensor: el usuario abrió el compartimiento del slot."""
+        ...
+
+    def slot_closed(self, slot_id: int) -> None:
+        """Evento del sensor: el usuario cerró el compartimiento del slot."""
         ...
 
     def on_pill_taken(self, slot_id: int, time: str) -> None:
-        """Evento de vuelta: el dispositivo reporta que la dosis fue tomada."""
+        """Evento de vuelta: la dosis fue tomada (escribe el log en el backend)."""
         ...
 ```
 
-El borrador se afina en la Fase 2 del plan de acción; es un contrato de ejemplo, no la implementación final.
+La tabla comando ↔ firmware (esp32-contract.md) es el documento de integración definitivo: [docs/esp32-contract.md](esp32-contract.md).
 
-### Flujo del timer (ejemplo del usuario)
+### Flujo del timer (HAL, sistema embebido)
 
 1. Front + back generan el horario (ya existe: `schedule.json`).
-2. El **scheduler del backend** corre cada minuto y calcula si toca alguna dosis.
-3. Si toca → el núcleo llama `driver.dispense(slot_id, hora)`.
-4. El adaptador dev actual loguea local; el adaptador ESP32 hará la llamada real al firmware.
-5. El evento de vuelta (`on_pill_taken`) es lo que escribe el log en el backend.
+2. El **scheduler del backend** corre cada 20 s y calcula si toca alguna dosis.
+3. Si toca → el núcleo dispara el **combo HAL** en orden: `driver.dispense(slot_id, hora)` → `driver.ring()` (buzzer) → `driver.oled_show(slot_id, name, hora)` (OLED) → `driver.led_on(slot_id)` (LED del slot).
+4. La dosis queda **pendiente** (sin auto-confirmación). El LED sigue encendido y, mientras haya pendientes, el scheduler re-envía `ring()` en cada ciclo (re-alarma).
+5. El usuario abre y cierra el compartimiento → el sensor reporta `slot_open` → `slot_closed`; con el cierre, el driver hace `led_off` y `on_pill_taken`, que escribe el log en el backend (y pushea por WS).
+6. Sin sensor, la toma se simula localmente: botón **"Abrir y tomar"** del modal → `POST /api/driver/sim` (open + close), mismo camino.
 
-El **timer vive en el backend, no en el driver**. El driver solo ejecuta. Así, si el dispositivo está dormido o apagado, el backend registra igual "no dispensado".
+El **timer vive en el backend, no en el driver**. El driver solo ejecuta y reporta. Así, si el dispositivo está dormido o apagado, el backend registra igual "no dispensado".
 
 ### Fronteras de autenticación
 
@@ -239,9 +269,12 @@ El **timer vive en el backend, no en el driver**. El driver solo ejecuta. Así, 
 | --- | --- |
 | Frontend (rutas `/api/*` estables + WS) | ✅ Login con usuario, logout, push por WebSocket |
 | Vulnerabilidades V1–V10 | ✅ Cerradas (2 PRs, ver action-plan.md) |
-| Núcleo: scheduler de dosis | ✅ Thread cada 20 s → `DRIVER.dispense` (H3) |
-| Puerto `DriverPort` | ✅ `typing.Protocol` en `Dev_server.py` (H1) |
-| Adaptador `DevDriver` (mock GPIO) | ✅ Simula motor/buzzer/sensor; auto-confirma toma (H5/H6) |
+| Núcleo: scheduler de dosis | ✅ Thread cada 20 s → combo dispense + ring + oled_show + led_on + re-alarma por pendientes (H3/H4) |
+| Puerto `DriverPort` | ✅ `typing.Protocol` en `Dev_server.py` (H1), 10 firmas (dispense/ring/status/init/oled_show/led_on/led_off/slot_open/slot_closed/on_pill_taken) |
+| Adaptador `DevDriver` (mock GPIO) | ✅ Simula motor/buzzer/sensor/LED/OLED; NO auto-confirma; confirma por sensor (slot_open+slot_closed) o sim (H5/H6) |
+| Log estructurado `[hal]` | ✅ `_log` imprime `[hal] {ts} {action}({k=v,...}) -> {result}` y expone `last_events` con ts en `/api/status` |
+| Modal de dosis pendiente (UI) | ✅ Detecta dosis vencida, persiste ante recarga, "Abrir y tomar" simula sensor |
+| Contrato firmware | ✅ `docs/esp32-contract.md` (H4) — tabla DriverPort → comando + payload + auth `DEV_TOKEN` |
 | Integración ESP32 real | 🔲 Pendiente (necesita hardware; ver [action-plan.md](action-plan.md) H4/H5) |
 
 > **Nota sobre H2:** el refactor a módulos separados (`core/`, `ports/`, `adapters/`) sigue siendo deuda técnica; hoy el puerto, el adaptador mock y el scheduler viven en `Dev_server.py` para mantener el servidor en un solo archivo mientras el firmware no exista. El contrato (rutas + `DriverPort`) ya está definido y no debería cambiar cuando se separe.
